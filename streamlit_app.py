@@ -119,7 +119,8 @@ def plot_results(data, buy_markers, sell_markers):
     fig.tight_layout()
     fig.legend(loc="upper left", bbox_to_anchor=(0.1, 0.9))
 
-    plt.show()
+    #plt.show()
+    return fig
 
 
 if __name__ == "__main__":
@@ -130,6 +131,4 @@ if __name__ == "__main__":
     data = fetch_stock_data(ticker, start_date, end_date)
     data = calculate_technical_indicators(data)  # Ensure this function is called first
     buy_markers, sell_markers = backtest_strategy(data)
-    plot_results(data, buy_markers, sell_markers)
-
-st.write("hello")
+    st.pyplot(plot_results(data, buy_markers, sell_markers))
