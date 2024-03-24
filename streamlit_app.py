@@ -2,10 +2,10 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import ta  # Import the ta module for calculating technical indicators
+import ta
 import streamlit as st
 
-profit_losses = None  # Initialize profit_losses as a global variable
+profit_losses = None
 
 
 def fetch_stock_data(ticker, start_date, end_date):
@@ -15,37 +15,17 @@ def fetch_stock_data(ticker, start_date, end_date):
 
 
 def calculate_technical_indicators(data):
-    """Calculate technical indicators including RSI, Stochastic Oscillator, Williams %R, 20-day MA, 50-day MA, and 200-day MA."""
-    # Calculate RSI
+    """Calculate technical indicators including RSI, Stochastic Oscillator, and Williams %R."""
     data['RSI'] = ta.momentum.RSIIndicator(data['Close'], window=14).rsi()
-
-    # Calculate Stochastic Oscillator
     data['%K'] = ta.momentum.StochasticOscillator(data['High'], data['Low'], data['Close'], window=14, smooth_window=3).stoch()
-
-    # Create WilliamsRIndicator object
-    williams_r = ta.momentum.WilliamsRIndicator(data['High'], data['Low'], data['Close'], lbp=5)
-
-    # Access Williams %R values directly from the object
-    data['Williams_R'] = williams_r.williams_r()
-
-    # Calculate 20-day moving average
-    data['20_SMA'] = data['Close'].rolling(window=20).mean()
-
-    # Calculate 50-day moving average
-    data['50_SMA'] = data['Close'].rolling(window=50).mean()
-
-    # Calculate 200-day moving average
-    data['200_SMA'] = data['Close'].rolling(window=200).mean()
-
-    return data.ffill()  # Forward fill NaN values
-
-
+    data['Williams_R'] = ta.momentum.WilliamsRIndicator(data['High'], data['Low'], data['Close'], lbp=5).williams_r()
+    return data
 
 
 def backtest_strategy(data):
     """Backtest the trading strategy with modified entry and exit rules."""
     global profit_losses
-    profit_losses = np.full(len(data), np.nan)  # Initialize with NaN values
+    profit_losses = np.full(len(data), np.nan)
 
     position = None
     buy_price = None
@@ -56,19 +36,15 @@ def backtest_strategy(data):
     for index, row in data.iterrows():
         close_price = row['Close']
         williams_r = row['Williams_R']
-
-        # Get previous row's Williams %R value
         prev_williams_r = data.loc[index - pd.Timedelta(days=1), 'Williams_R'] if index - pd.Timedelta(
             days=1) in data.index else None
 
-        # Buy Signal: Williams %R moves above -80
         if williams_r > -80 and prev_williams_r is not None and prev_williams_r <= -80:
-            if position is None:
+            if position is None and index in data.index:
                 position = index
                 buy_price = close_price
                 buy_markers.append(index)
 
-        # Sell Signal: Williams %R moves below -20
         if williams_r < -20 and prev_williams_r is not None and prev_williams_r >= -20:
             if position is not None:
                 profit_loss = close_price - buy_price
@@ -77,58 +53,64 @@ def backtest_strategy(data):
                 position = None
                 sell_markers.append(index)
 
-    # Fill NaN values with the last known profit value (to create step function)
     profit_losses = pd.Series(profit_losses).fillna(method='ffill').values
-
-    # Pad zeros before the first sell signal
     first_sell_index = data.index.get_loc(sell_markers[0]) if sell_markers else len(data)
     profit_losses[:first_sell_index] = 0
 
     return buy_markers, sell_markers
 
 
-
-def plot_results(data, buy_markers, sell_markers):
+def plot_results(data, buy_markers, sell_markers, start_date, end_date):
     """Plot stock price and cumulative profit/loss with buy/sell labels."""
     global profit_losses
-    fig, ax1 = plt.subplots(figsize=(14, 7))
+    fig, ax1 = plt.subplots(figsize=(20, 12))  # Increased figure size
 
-    # Plot stock price and moving averages
-    ax1.plot(data.index, data['Close'], label='Close Price', color='blue')
-    ax1.plot(data.index, data['20_SMA'], label='20-Day SMA', color='orange')
-    ax1.plot(data.index, data['50_SMA'], label='50-Day SMA', color='green')
+    # Filter data within the specified date range
+    filtered_data = data.loc[start_date:end_date]
 
-    # Plot the 200-day moving average
-    ax1.plot(data.index, data['200_SMA'], label='200-Day SMA', color='red')
+    ax1.plot(filtered_data.index, filtered_data['Close'], label='Close Price', color='blue')
 
-    # Fill the area between the 20-day and 200-day moving averages
-    ax1.fill_between(data.index, data['20_SMA'], data['200_SMA'], where=data['20_SMA'] > data['200_SMA'], color='green', alpha=0.3)
+    ax1.set_ylabel('Price', fontsize=16)  # Increased font size
+    ax1.set_xlabel('Date', fontsize=16)  # Increased font size
 
-    ax1.set_ylabel('Price')
-    ax1.set_xlabel('Date')
+    buy_markers_filtered = [marker for marker in buy_markers if marker in filtered_data.index]
+    ax1.scatter(buy_markers_filtered, filtered_data['Close'].loc[buy_markers_filtered], color='green', marker='^', label='Buy', s=100)  # Increased marker size
 
-    # Plot buy and sell markers
-    ax1.scatter(buy_markers, data['Close'].loc[buy_markers], color='green', marker='^', label='Buy')
-    ax1.scatter(sell_markers, data['Close'].loc[sell_markers], color='red', marker='v', label='Sell')
+    sell_markers_filtered = [marker for marker in sell_markers if marker in filtered_data.index]
+    ax1.scatter(sell_markers_filtered, filtered_data['Close'].loc[sell_markers_filtered], color='red', marker='v', label='Sell', s=100)  # Increased marker size
 
-    # Plot profit/loss as step function at sell signals
-    ax2 = ax1.twinx()
-    ax2.step(data.index, profit_losses, where='post', label='Profit/Loss', color='orange')
-    ax2.set_ylabel('Profit/Loss')
+    if profit_losses is not None and len(profit_losses) == len(data.index):
+        ax2 = ax1.twinx()
+        ax2.step(data.index, profit_losses, where='post', label='Profit/Loss', color='orange')
+        ax2.set_ylabel('Profit/Loss', fontsize=16)  # Increased font size
 
     fig.tight_layout()
-    fig.legend(loc="upper left", bbox_to_anchor=(0.1, 0.9))
+    fig.legend(loc="upper left", bbox_to_anchor=(0.1, 0.9), fontsize=14)  # Increased font size
 
-    #plt.show()
+    # Increase tick label sizes
+    ax1.tick_params(axis='both', which='major', labelsize=14)
+    if 'ax2' in locals():
+        ax2.tick_params(axis='both', which='major', labelsize=14)
+
     return fig
 
 
 if __name__ == "__main__":
-    ticker = 'GOOG'  # Replace 'GOOG' with the ticker symbol of the stock you want to analyze
-    start_date = '2016-01-01'  # Specify start date
-    end_date = '2024-01-01'  # Specify end date
+    st.set_page_config(layout="wide", page_title='Stock Analysis', page_icon=":chart_with_upwards_trend:", initial_sidebar_state="expanded")
 
-    data = fetch_stock_data(ticker, start_date, end_date)
-    data = calculate_technical_indicators(data)  # Ensure this function is called first
+    st.title('Stock Analysis')
+
+    # Add input box for ticker symbol
+    ticker = st.sidebar.text_input('Enter Ticker Symbol', 'GOOG')
+
+    st.sidebar.title('Graph Settings')
+    start_date_graph = st.sidebar.date_input('Start Date', pd.to_datetime('2014-01-01'), min_value=pd.to_datetime('2004-01-01'), max_value=pd.to_datetime('today'))
+    end_date_graph = st.sidebar.date_input('End Date', pd.to_datetime('2024-01-01'))
+
+    data = fetch_stock_data(ticker, start_date_graph, end_date_graph)
+    data = calculate_technical_indicators(data)
     buy_markers, sell_markers = backtest_strategy(data)
-    st.pyplot(plot_results(data, buy_markers, sell_markers))
+    selected_data = data.loc[start_date_graph:end_date_graph]
+
+    fig = plot_results(data, buy_markers, sell_markers, start_date_graph, end_date_graph)
+    st.pyplot(fig)
