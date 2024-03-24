@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import ta  # Import the ta module for calculating technical indicators
+import streamlit as st
 
 profit_losses = None  # Initialize profit_losses as a global variable
 
@@ -130,3 +131,5 @@ if __name__ == "__main__":
     data = calculate_technical_indicators(data)  # Ensure this function is called first
     buy_markers, sell_markers = backtest_strategy(data)
     plot_results(data, buy_markers, sell_markers)
+
+st.write("hello")
