@@ -78,7 +78,6 @@ def backtest_strategy(data, entry_condition, exit_condition, commission, initial
 
 
 
-# Streamlit app
 def main():
     st.set_page_config(layout="wide")
 
@@ -92,7 +91,7 @@ def main():
     end_date = pd.Timestamp('2024-01-01')
 
     st.sidebar.subheader('Select Parameters')
-    short_term_ema_days = st.sidebar.number_input('Short Term EMA (days)', value=14, step=1)
+    short_term_ema_days = st.sidebar.number_input('Short Term EMA (days)', value=100, step=1)
     long_term_ema_days = st.sidebar.number_input('Long Term EMA (days)', value=200, step=1)
     commission = st.sidebar.number_input('Commission', value=10.0, step=1.0)
     initial_investment = st.sidebar.number_input('Initial Investment', value=400, step=1)
@@ -101,6 +100,8 @@ def main():
     buy_markers_list = []
     sell_markers_list = []
     cumulative_profit_list = []
+
+    new_signals = {}
 
     for ticker in tickers:
         data = fetch_stock_data(ticker, start_date, end_date)
@@ -113,6 +114,15 @@ def main():
         buy_markers_list.append(buy_markers)
         sell_markers_list.append(sell_markers)
         cumulative_profit_list.append(cumulative_profit)
+
+        last_date = data.index[-1]
+        new_buy_signal = len(buy_markers) > 0 and buy_markers[-1] == last_date
+        new_sell_signal = len(sell_markers) > 0 and sell_markers[-1] == last_date
+
+        new_signals[ticker] = {
+            'Buy': new_buy_signal,
+            'Sell': new_sell_signal
+        }
 
     # Plot results for each ticker
     fig, ax1 = plt.subplots(figsize=(10, 6))
@@ -159,7 +169,7 @@ def main():
     total_avg_profit_per_month = 0
     total_avg_profit_per_trade = 0
 
-    for ticker, cumulative_profit, sell_markers in zip(tickers, cumulative_profit_list, sell_markers_list):
+    for ticker, cumulative_profit, sell_markers, buy_markers in zip(tickers, cumulative_profit_list, sell_markers_list, buy_markers_list):
         trades = len(sell_markers)
         avg_trades_per_week = trades / ((end_date - start_date).days / 7)
         num_wins = sum(1 for i in range(1, len(cumulative_profit)) if cumulative_profit[i] > cumulative_profit[i - 1])
@@ -192,6 +202,60 @@ def main():
                       columns=['Ticker', 'Number of Trades', 'Avg Trades/Week', 'Number of Wins', 'Total Profit',
                                'Avg Profit/Month', 'Avg Profit/Trade'])
     st.table(df)
+
+    # Display new signals and open positions
+    st.subheader('New Signals and Open Positions')
+
+    # Create a list to store the data
+    table_data = []
+
+    for i, (ticker, signals) in enumerate(new_signals.items()):
+        signal_status = ''
+        if signals['Buy'] and signals['Sell']:
+            signal_status = 'Both buy and sell signals'
+        elif signals['Buy']:
+            signal_status = 'Buy signal'
+        elif signals['Sell']:
+            signal_status = 'Sell signal'
+        else:
+            signal_status = 'No new buy or sell signals'
+
+        # Check if there is an open position
+        buy_markers = buy_markers_list[i]
+        sell_markers = sell_markers_list[i]
+        if len(buy_markers) > len(sell_markers):
+            last_buy_date = buy_markers[-1]
+            last_buy_price = dataframes[i].loc[last_buy_date, 'Close']
+            current_close_price = dataframes[i].iloc[-1]['Close']
+            shares_bought = initial_investment // last_buy_price  # Using integer division to get whole number of shares
+            current_potential_profit = (current_close_price - last_buy_price) * shares_bought
+
+            # Add data to the table
+            table_data.append({
+                'Ticker': ticker,
+                'Signal': signal_status,
+                'Open Position': True,
+                'Buy Price': round(last_buy_price),
+                'Last Close Price': round(current_close_price),
+                'Current Potential Profit if Sold Today': round(current_potential_profit)
+            })
+        else:
+            # Add data to the table
+            table_data.append({
+                'Ticker': ticker,
+                'Signal': signal_status,
+                'Open Position': False,
+                'Buy Price': '',
+                'Last Close Price': '',
+                'Current Potential Profit if Sold Today': ''
+            })
+
+    # Convert the list of dictionaries to a DataFrame
+    table_df = pd.DataFrame(table_data)
+
+    # Display the table
+    st.table(table_df)
+
 
 if __name__ == "__main__":
     main()
