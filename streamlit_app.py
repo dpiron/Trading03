@@ -11,7 +11,7 @@ def fetch_stock_data(ticker, start_date, end_date):
     return data
 
 
-def calculate_technical_indicators(data, short_term_ema_days=14, long_term_ema_days=200):
+def calculate_technical_indicators(data, short_term_ema_days=100, long_term_ema_days=200):
     data['Short_EMA'] = data['Close'].ewm(span=short_term_ema_days, adjust=False).mean()
     data['Long_EMA'] = data['Close'].ewm(span=long_term_ema_days, adjust=False).mean()
 
